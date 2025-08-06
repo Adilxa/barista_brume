@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, QrCode, Flashlight, RotateCcw, History, X, Copy, Share2, Check, User, Bell, Trash2, RefreshCw, Clock, Coffee, Loader2 } from 'lucide-react';
+import { Camera, QrCode, Flashlight, RotateCcw, History, X, Copy, Share2, Check, User, Bell, Trash2, RefreshCw, Clock, Coffee, Loader2, Gift } from 'lucide-react';
 import jsQR, { QRCode } from 'jsqr';
 import axios from 'axios';
 
@@ -27,12 +27,23 @@ interface AddCupResponse {
     };
 }
 
+interface ClaimFreeCoffeeResponse {
+    status: number;
+    message: string;
+    user: {
+        id: number;
+        availableFreeCoffees: number;
+        usedCardId: number;
+    };
+}
+
 interface AddCupError {
     status: number;
     message: string;
 }
 
 type FacingMode = 'user' | 'environment';
+type ScanMode = 'add-cup' | 'claim-free-coffee';
 
 interface CameraConstraints {
     video: {
@@ -49,11 +60,39 @@ interface MediaTrackCapabilities {
 
 const addCup = async (id: string): Promise<AddCupResponse | AddCupError> => {
     try {
-        const res = await axios.post(`http://84.54.12.45:5000/api/user/${id}/add-cup`);
+        const res = await axios.post(`http://localhost:5000/api/user/${id}/add-cup`);
         return res.data as AddCupResponse;
     }
     catch (e: any) {
-        return e.response.data as AddCupError;
+        console.error('AddCup error:', e);
+        // Проверяем есть ли response и data
+        if (e.response && e.response.data) {
+            return e.response.data as AddCupError;
+        }
+        // Если нет response, возвращаем общую ошибку
+        return {
+            status: 500,
+            message: e.message || 'Ошибка подключения к серверу'
+        } as AddCupError;
+    }
+}
+
+const claimFreeCoffee = async (id: string): Promise<ClaimFreeCoffeeResponse | AddCupError> => {
+    try {
+        const res = await axios.post(`http://localhost:5000/api/user/${id}/claim-coffee`);
+        return res.data as ClaimFreeCoffeeResponse;
+    }
+    catch (e: any) {
+        console.error('ClaimFreeCoffee error:', e);
+        // Проверяем есть ли response и data
+        if (e.response && e.response.data) {
+            return e.response.data as AddCupError;
+        }
+        // Если нет response, возвращаем общую ошибку
+        return {
+            status: 500,
+            message: e.message || 'Ошибка подключения к серверу'
+        } as AddCupError;
     }
 }
 
@@ -68,11 +107,17 @@ const HomeScreen: React.FC = () => {
     const [copied, setCopied] = useState<boolean>(false);
     const [facingMode, setFacingMode] = useState<FacingMode>('environment');
     const [dimensions, setDimensions] = useState<string>('396 × 217');
+    const [scanMode, setScanMode] = useState<ScanMode>('add-cup');
 
-    // Новые состояния для обработки запроса addCup
+    // Состояния для обработки запроса addCup
     const [isAddingCup, setIsAddingCup] = useState<boolean>(false);
     const [cupResponse, setCupResponse] = useState<AddCupResponse | null>(null);
     const [cupError, setCupError] = useState<string>('');
+
+    // Состояния для обработки запроса claimFreeCoffee
+    const [isClaimingFreeCoffee, setIsClaimingFreeCoffee] = useState<boolean>(false);
+    const [freeCoffeeResponse, setFreeCoffeeResponse] = useState<ClaimFreeCoffeeResponse | null>(null);
+    const [freeCoffeeError, setFreeCoffeeError] = useState<string>('');
 
     // Refs с типизацией
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -205,11 +250,37 @@ const HomeScreen: React.FC = () => {
             } else {
                 setCupError(response.message || 'Не удалось добавить чашку');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error adding cup:', error);
-            setCupError('Ошибка подключения к серверу');
+            setCupError('Неожиданная ошибка: ' + (error.message || 'Ошибка подключения к серверу'));
         } finally {
             setIsAddingCup(false);
+        }
+    };
+
+    // Функция для выдачи бесплатного кофе после сканирования
+    const handleClaimFreeCoffee = async (userId: string): Promise<void> => {
+        setIsClaimingFreeCoffee(true);
+        setFreeCoffeeError('');
+        setFreeCoffeeResponse(null);
+
+        try {
+            const response = await claimFreeCoffee(userId);
+
+            if (response.status === 200) {
+                setFreeCoffeeResponse(response as ClaimFreeCoffeeResponse);
+                // Вибрация при успешной выдаче бесплатного кофе
+                if (navigator.vibrate) {
+                    navigator.vibrate([300, 150, 300, 150, 300]);
+                }
+            } else {
+                setFreeCoffeeError(response.message || 'Не удалось выдать бесплатный кофе');
+            }
+        } catch (error: any) {
+            console.error('Error claiming free coffee:', error);
+            setFreeCoffeeError('Неожиданная ошибка: ' + (error.message || 'Ошибка подключения к серверу'));
+        } finally {
+            setIsClaimingFreeCoffee(false);
         }
     };
 
@@ -238,8 +309,12 @@ const HomeScreen: React.FC = () => {
             navigator.vibrate([100, 50, 100]);
         }
 
-        // Автоматически вызываем addCup с полученным ID
-        await handleAddCup(data);
+        // Выполняем действие в зависимости от режима сканирования
+        if (scanMode === 'add-cup') {
+            await handleAddCup(data);
+        } else if (scanMode === 'claim-free-coffee') {
+            await handleClaimFreeCoffee(data);
+        }
     };
 
     // Начало сканирования с оптимизацией для мобильных устройств
@@ -252,6 +327,8 @@ const HomeScreen: React.FC = () => {
         setError('');
         setCupError('');
         setCupResponse(null);
+        setFreeCoffeeError('');
+        setFreeCoffeeResponse(null);
 
         // Ждем загрузки видео
         if (videoRef.current) {
@@ -349,6 +426,8 @@ const HomeScreen: React.FC = () => {
         setError('');
         setCupError('');
         setCupResponse(null);
+        setFreeCoffeeError('');
+        setFreeCoffeeResponse(null);
         stopScanning();
     };
 
@@ -375,6 +454,34 @@ const HomeScreen: React.FC = () => {
             <main className="px-6 py-6">
                 {!showHistory ? (
                     <>
+                        {/* Mode Selection */}
+                        <div className="mb-6">
+                            <div className="flex bg-gray-100 rounded-2xl p-1 shadow-sm">
+                                <button
+                                    onClick={() => setScanMode('add-cup')}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center ${scanMode === 'add-cup'
+                                            ? 'bg-blue-500 text-white shadow-md'
+                                            : 'text-gray-600 hover:text-gray-800'
+                                        }`}
+                                    type="button"
+                                >
+                                    <Coffee className="w-4 h-4 mr-2" />
+                                    Добавить чашку
+                                </button>
+                                <button
+                                    onClick={() => setScanMode('claim-free-coffee')}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center ${scanMode === 'claim-free-coffee'
+                                            ? 'bg-green-500 text-white shadow-md'
+                                            : 'text-gray-600 hover:text-gray-800'
+                                        }`}
+                                    type="button"
+                                >
+                                    <Gift className="w-4 h-4 mr-2" />
+                                    Выдать бесплатный кофе
+                                </button>
+                            </div>
+                        </div>
+
                         {/* Scanner Area */}
                         <div className="text-center mb-6">
                             <div className="inline-block bg-blue-600 text-white px-4 py-1 rounded-full text-xs font-medium mb-3 shadow-md">
@@ -396,43 +503,62 @@ const HomeScreen: React.FC = () => {
 
                                 {/* Scanner overlay */}
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                    {!isScanning && !scannedData && !error && !isAddingCup && (
+                                    {!isScanning && !scannedData && !error && !isAddingCup && !isClaimingFreeCoffee && (
                                         <div className="text-center">
                                             <div className="w-16 h-16 mx-auto mb-4 bg-[#F7E7D8] rounded-full shadow-lg flex items-center justify-center animate-pulse border border-[#D4C5B8]">
                                                 <QrCode className="w-8 h-8 text-gray-700" />
                                             </div>
-                                            <p className="text-gray-700 font-medium">Отсканируйте QR-код</p>
-                                            <p className="text-gray-600 text-sm">для получения информации</p>
+                                            <p className="text-gray-700 font-medium">
+                                                {scanMode === 'add-cup' ? 'Отсканируйте QR-код' : 'Отсканируйте QR-код'}
+                                            </p>
+                                            <p className="text-gray-600 text-sm">
+                                                {scanMode === 'add-cup' ? 'для добавления чашки' : 'для выдачи бесплатного кофе'}
+                                            </p>
                                         </div>
                                     )}
 
                                     {isScanning && (
                                         <div className="relative">
-                                            {/* Scanning frame без блюра */}
-                                            <div className="relative w-64 h-48 border-4 border-blue-600 rounded-2xl bg-white/20">
+                                            {/* Scanning frame */}
+                                            <div className={`relative w-64 h-48 border-4 rounded-2xl bg-white/20 ${scanMode === 'add-cup' ? 'border-blue-600' : 'border-green-600'
+                                                }`}>
                                                 {/* Corner indicators */}
-                                                <div className="absolute -top-2 -left-2 w-8 h-8 border-t-4 border-l-4 border-blue-600 rounded-tl-xl animate-pulse"></div>
-                                                <div className="absolute -top-2 -right-2 w-8 h-8 border-t-4 border-r-4 border-blue-600 rounded-tr-xl animate-pulse delay-150"></div>
-                                                <div className="absolute -bottom-2 -left-2 w-8 h-8 border-b-4 border-l-4 border-blue-600 rounded-bl-xl animate-pulse delay-300"></div>
-                                                <div className="absolute -bottom-2 -right-2 w-8 h-8 border-b-4 border-r-4 border-blue-600 rounded-br-xl animate-pulse delay-450"></div>
+                                                <div className={`absolute -top-2 -left-2 w-8 h-8 border-t-4 border-l-4 rounded-tl-xl animate-pulse ${scanMode === 'add-cup' ? 'border-blue-600' : 'border-green-600'
+                                                    }`}></div>
+                                                <div className={`absolute -top-2 -right-2 w-8 h-8 border-t-4 border-r-4 rounded-tr-xl animate-pulse delay-150 ${scanMode === 'add-cup' ? 'border-blue-600' : 'border-green-600'
+                                                    }`}></div>
+                                                <div className={`absolute -bottom-2 -left-2 w-8 h-8 border-b-4 border-l-4 rounded-bl-xl animate-pulse delay-300 ${scanMode === 'add-cup' ? 'border-blue-600' : 'border-green-600'
+                                                    }`}></div>
+                                                <div className={`absolute -bottom-2 -right-2 w-8 h-8 border-b-4 border-r-4 rounded-br-xl animate-pulse delay-450 ${scanMode === 'add-cup' ? 'border-blue-600' : 'border-green-600'
+                                                    }`}></div>
 
                                                 {/* Scanning line animation */}
                                                 <div className="absolute inset-4 overflow-hidden rounded-lg">
-                                                    <div className="h-1 bg-blue-600 animate-pulse shadow-lg shadow-blue-600/50 rounded-full"></div>
+                                                    <div className={`h-1 animate-pulse rounded-full ${scanMode === 'add-cup'
+                                                            ? 'bg-blue-600 shadow-lg shadow-blue-600/50'
+                                                            : 'bg-green-600 shadow-lg shadow-green-600/50'
+                                                        }`}></div>
                                                 </div>
                                             </div>
 
                                             <div className="mt-4 bg-white/95 rounded-full px-6 py-2 shadow-lg border border-gray-200">
-                                                <p className="text-blue-700 font-medium text-sm">Сканирование...</p>
+                                                <p className={`font-medium text-sm ${scanMode === 'add-cup' ? 'text-blue-700' : 'text-green-700'
+                                                    }`}>
+                                                    {scanMode === 'add-cup' ? 'Сканирование для добавления...' : 'Сканирование для выдачи...'}
+                                                </p>
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Loading state для добавления чашки */}
-                                    {isAddingCup && (
+                                    {/* Loading state */}
+                                    {(isAddingCup || isClaimingFreeCoffee) && (
                                         <div className="text-center bg-white/95 rounded-2xl p-6 shadow-lg border border-blue-200">
-                                            <Loader2 className="w-12 h-12 mx-auto mb-3 text-blue-500 animate-spin" />
-                                            <p className="text-blue-600 text-sm font-medium">Добавляем чашку...</p>
+                                            <Loader2 className={`w-12 h-12 mx-auto mb-3 animate-spin ${isAddingCup ? 'text-blue-500' : 'text-green-500'
+                                                }`} />
+                                            <p className={`text-sm font-medium ${isAddingCup ? 'text-blue-600' : 'text-green-600'
+                                                }`}>
+                                                {isAddingCup ? 'Добавляем чашку...' : 'Выдаем бесплатный кофе...'}
+                                            </p>
                                         </div>
                                     )}
 
@@ -460,6 +586,49 @@ const HomeScreen: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Free Coffee Response Results */}
+                        {freeCoffeeResponse && (
+                            <div className="mb-6 p-6 bg-green-50 border border-green-200 rounded-2xl shadow-md">
+                                <div className="flex items-center mb-3">
+                                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mr-3 shadow-md">
+                                        <Gift className="w-5 h-5 text-white" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-green-800">
+                                        🎉 Бесплатный кофе выдан!
+                                    </h3>
+                                </div>
+
+                                <div className="p-4 bg-white rounded-xl border border-green-100 mb-4 shadow-sm">
+                                    <p className="text-sm text-green-700 mb-2">{freeCoffeeResponse.message}</p>
+                                    <div className="grid grid-cols-2 gap-4 mt-3">
+                                        <div className="text-center">
+                                            <p className="text-2xl font-bold text-green-600">{freeCoffeeResponse.user.availableFreeCoffees}</p>
+                                            <p className="text-xs text-gray-600">Осталось бесплатных</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-2xl font-bold text-blue-600">#{freeCoffeeResponse.user.usedCardId}</p>
+                                            <p className="text-xs text-gray-600">ID использованной карточки</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Free Coffee Error */}
+                        {freeCoffeeError && (
+                            <div className="mb-6 p-6 bg-red-50 border border-red-200 rounded-2xl shadow-md">
+                                <div className="flex items-center mb-3">
+                                    <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center mr-3 shadow-md">
+                                        <X className="w-5 h-5 text-white" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-red-800">Ошибка выдачи</h3>
+                                </div>
+                                <div className="p-4 bg-white rounded-xl border border-red-100 shadow-sm">
+                                    <p className="text-sm text-red-700">{freeCoffeeError}</p>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Cup Response Results */}
                         {cupResponse && (
@@ -518,13 +687,15 @@ const HomeScreen: React.FC = () => {
                         )}
 
                         {/* QR Results */}
-                        {scannedData && !isAddingCup && (
+                        {scannedData && !isAddingCup && !isClaimingFreeCoffee && (
                             <div className="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-2xl shadow-md">
                                 <div className="flex items-center mb-3">
                                     <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 shadow-md">
                                         <Check className="w-5 h-5 text-white" />
                                     </div>
-                                    <h3 className="text-lg font-semibold text-blue-800">QR-код отсканирован!</h3>
+                                    <h3 className="text-lg font-semibold text-blue-800">
+                                        QR-код отсканирован! ({scanMode === 'add-cup' ? 'Добавление чашки' : 'Выдача кофе'})
+                                    </h3>
                                 </div>
                                 <div className="p-4 bg-white rounded-xl border border-blue-100 mb-4 shadow-sm">
                                     <p className="text-sm font-mono break-all text-gray-800">ID: {scannedData}</p>
@@ -555,12 +726,15 @@ const HomeScreen: React.FC = () => {
                             {!isScanning ? (
                                 <button
                                     onClick={startScanning}
-                                    disabled={isAddingCup}
-                                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-semibold text-lg hover:bg-blue-700 transition-all flex items-center justify-center shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                                    disabled={isAddingCup || isClaimingFreeCoffee}
+                                    className={`w-full py-4 text-white rounded-2xl font-semibold text-lg hover:shadow-xl transition-all flex items-center justify-center shadow-lg transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${scanMode === 'add-cup'
+                                            ? 'bg-blue-600 hover:bg-blue-700'
+                                            : 'bg-green-600 hover:bg-green-700'
+                                        }`}
                                     type="button"
                                 >
                                     <Camera className="w-6 h-6 mr-2" />
-                                    Сканировать QR-код
+                                    {scanMode === 'add-cup' ? 'Добавить чашку' : 'Выдать бесплатный кофе'}
                                 </button>
                             ) : (
                                 <button
@@ -572,7 +746,7 @@ const HomeScreen: React.FC = () => {
                                 </button>
                             )}
 
-                            {(scannedData || cupResponse || cupError) && (
+                            {(scannedData || cupResponse || cupError || freeCoffeeResponse || freeCoffeeError) && (
                                 <button
                                     onClick={resetScan}
                                     className="w-full py-3 bg-gray-500 text-white rounded-2xl font-medium text-base hover:bg-gray-600 transition-all shadow-md hover:shadow-lg"
