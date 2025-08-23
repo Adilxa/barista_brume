@@ -60,7 +60,7 @@ interface MediaTrackCapabilities {
 
 const addCup = async (id: string): Promise<AddCupResponse | AddCupError> => {
     try {
-        const res = await axios.post(`http://localhost:5000/api/user/${id}/add-cup`);
+        const res = await axios.post(`http://brume.kg:5000/api/user/${id}/add-cup`);
         return res.data as AddCupResponse;
     }
     catch (e: any) {
@@ -79,7 +79,7 @@ const addCup = async (id: string): Promise<AddCupResponse | AddCupError> => {
 
 const claimFreeCoffee = async (id: string): Promise<ClaimFreeCoffeeResponse | AddCupError> => {
     try {
-        const res = await axios.post(`http://localhost:5000/api/user/${id}/claim-coffee`);
+        const res = await axios.post(`http://brume.kg:5000/api/user/${id}/claim-coffee`);
         return res.data as ClaimFreeCoffeeResponse;
     }
     catch (e: any) {
@@ -460,8 +460,8 @@ const HomeScreen: React.FC = () => {
                                 <button
                                     onClick={() => setScanMode('add-cup')}
                                     className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center ${scanMode === 'add-cup'
-                                            ? 'bg-blue-500 text-white shadow-md'
-                                            : 'text-gray-600 hover:text-gray-800'
+                                        ? 'bg-blue-500 text-white shadow-md'
+                                        : 'text-gray-600 hover:text-gray-800'
                                         }`}
                                     type="button"
                                 >
@@ -471,8 +471,8 @@ const HomeScreen: React.FC = () => {
                                 <button
                                     onClick={() => setScanMode('claim-free-coffee')}
                                     className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center ${scanMode === 'claim-free-coffee'
-                                            ? 'bg-green-500 text-white shadow-md'
-                                            : 'text-gray-600 hover:text-gray-800'
+                                        ? 'bg-green-500 text-white shadow-md'
+                                        : 'text-gray-600 hover:text-gray-800'
                                         }`}
                                     type="button"
                                 >
@@ -535,8 +535,8 @@ const HomeScreen: React.FC = () => {
                                                 {/* Scanning line animation */}
                                                 <div className="absolute inset-4 overflow-hidden rounded-lg">
                                                     <div className={`h-1 animate-pulse rounded-full ${scanMode === 'add-cup'
-                                                            ? 'bg-blue-600 shadow-lg shadow-blue-600/50'
-                                                            : 'bg-green-600 shadow-lg shadow-green-600/50'
+                                                        ? 'bg-blue-600 shadow-lg shadow-blue-600/50'
+                                                        : 'bg-green-600 shadow-lg shadow-green-600/50'
                                                         }`}></div>
                                                 </div>
                                             </div>
@@ -728,8 +728,8 @@ const HomeScreen: React.FC = () => {
                                     onClick={startScanning}
                                     disabled={isAddingCup || isClaimingFreeCoffee}
                                     className={`w-full py-4 text-white rounded-2xl font-semibold text-lg hover:shadow-xl transition-all flex items-center justify-center shadow-lg transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${scanMode === 'add-cup'
-                                            ? 'bg-blue-600 hover:bg-blue-700'
-                                            : 'bg-green-600 hover:bg-green-700'
+                                        ? 'bg-blue-600 hover:bg-blue-700'
+                                        : 'bg-green-600 hover:bg-green-700'
                                         }`}
                                     type="button"
                                 >
