@@ -60,7 +60,7 @@ interface MediaTrackCapabilities {
 
 const addCup = async (id: string): Promise<AddCupResponse | AddCupError> => {
     try {
-        const res = await axios.post(`http://brume.kg:5000/api/user/${id}/add-cup`);
+        const res = await axios.post(`https://brume.kg/api/user/${id}/add-cup`);
         return res.data as AddCupResponse;
     }
     catch (e: any) {
@@ -79,7 +79,7 @@ const addCup = async (id: string): Promise<AddCupResponse | AddCupError> => {
 
 const claimFreeCoffee = async (id: string): Promise<ClaimFreeCoffeeResponse | AddCupError> => {
     try {
-        const res = await axios.post(`http://brume.kg:5000/api/user/${id}/claim-coffee`);
+        const res = await axios.post(`https://brume.kg/api/user/${id}/claim-coffee`);
         return res.data as ClaimFreeCoffeeResponse;
     }
     catch (e: any) {
@@ -97,6 +97,23 @@ const claimFreeCoffee = async (id: string): Promise<ClaimFreeCoffeeResponse | Ad
 }
 
 const HomeScreen: React.FC = () => {
+    // Проверка поддержки камеры при загрузке компонента
+    useEffect(() => {
+        // Проверяем поддержку getUserMedia
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            setError('Ваш браузер не поддерживает доступ к камере');
+            return;
+        }
+
+        // Проверяем HTTPS (камера работает только на HTTPS или localhost)
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+            setError('Камера работает только на HTTPS или localhost. Текущий протокол: ' + location.protocol);
+            return;
+        }
+
+        console.log('Поддержка камеры проверена успешно');
+    }, []);
+
     // State с типизацией
     const [isScanning, setIsScanning] = useState<boolean>(false);
     const [scannedData, setScannedData] = useState<string>('');
@@ -130,34 +147,62 @@ const HomeScreen: React.FC = () => {
         try {
             setError('');
 
-            const constraints: CameraConstraints = {
+            // Проверяем поддержку getUserMedia
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setError('Ваш браузер не поддерживает доступ к камере');
+                return false;
+            }
+
+            // Упрощенные constraints для лучшей совместимости
+            const constraints = {
                 video: {
                     facingMode: facingMode,
-                    width: { ideal: 1280, max: 1920 },
-                    height: { ideal: 720, max: 1080 },
-                    frameRate: { ideal: 30, max: 60 }
+                    width: { ideal: 640, max: 1280 },
+                    height: { ideal: 480, max: 720 }
                 }
             };
+
+            console.log('Запрашиваем доступ к камере с constraints:', constraints);
 
             const stream: MediaStream = await navigator.mediaDevices.getUserMedia(constraints);
             streamRef.current = stream;
 
+            console.log('Поток камеры получен:', stream);
+
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
 
-                // Обработчик загрузки метаданных видео
+                // Удаляем старый обработчик если есть
+                videoRef.current.onloadedmetadata = null;
+
+                // Добавляем новый обработчик
                 videoRef.current.onloadedmetadata = (): void => {
+                    console.log('Видео метаданные загружены');
                     if (videoRef.current) {
                         // Обновляем размеры после загрузки видео
                         const width = videoRef.current.videoWidth;
                         const height = videoRef.current.videoHeight;
                         setDimensions(`${width} × ${height}`);
+                        console.log('Размеры видео:', width, 'x', height);
 
-                        videoRef.current.play().catch((err: Error) => {
+                        // Пытаемся воспроизвести видео
+                        videoRef.current.play().then(() => {
+                            console.log('Видео успешно воспроизводится');
+                        }).catch((err: Error) => {
                             console.error('Video play error:', err);
-                            setError('Ошибка воспроизведения видео');
+                            setError('Ошибка воспроизведения видео: ' + err.message);
                         });
                     }
+                };
+
+                // Дополнительная проверка готовности видео
+                videoRef.current.oncanplay = (): void => {
+                    console.log('Видео готово к воспроизведению');
+                };
+
+                videoRef.current.onerror = (event): void => {
+                    console.error('Ошибка видео элемента:', event);
+                    setError('Ошибка видео элемента');
                 };
             }
 
@@ -173,8 +218,10 @@ const HomeScreen: React.FC = () => {
                     setError('Камера не найдена. Убедитесь, что устройство имеет камеру.');
                 } else if (err.name === 'NotReadableError') {
                     setError('Камера используется другим приложением.');
+                } else if (err.name === 'NotSupportedError') {
+                    setError('Ваш браузер не поддерживает доступ к камере.');
                 } else {
-                    setError('Не удалось получить доступ к камере. Попробуйте обновить страницу.');
+                    setError('Не удалось получить доступ к камере: ' + err.message);
                 }
             } else {
                 setError('Неизвестная ошибка при доступе к камере.');
@@ -319,8 +366,13 @@ const HomeScreen: React.FC = () => {
 
     // Начало сканирования с оптимизацией для мобильных устройств
     const startScanning = async (): Promise<void> => {
+        console.log('Начинаем сканирование...');
+
         const cameraStarted: boolean = await startCamera();
-        if (!cameraStarted) return;
+        if (!cameraStarted) {
+            console.log('Камера не запущена');
+            return;
+        }
 
         setIsScanning(true);
         setScannedData('');
@@ -330,16 +382,21 @@ const HomeScreen: React.FC = () => {
         setFreeCoffeeError('');
         setFreeCoffeeResponse(null);
 
-        // Ждем загрузки видео
-        if (videoRef.current) {
-            videoRef.current.addEventListener('loadedmetadata', (): void => {
+        // Ждем загрузки видео с таймаутом
+        const startScanningWithTimeout = (): void => {
+            if (videoRef.current && videoRef.current.readyState >= 2) {
+                console.log('Видео готово, начинаем сканирование');
                 // Начинаем сканирование с частотой 10 FPS для лучшей производительности
                 scanIntervalRef.current = setInterval(scanQRCode, 100);
-            });
-        } else {
-            // Fallback если видео уже загружено
-            scanIntervalRef.current = setInterval(scanQRCode, 100);
-        }
+            } else {
+                console.log('Видео еще не готово, ждем...');
+                // Ждем еще немного
+                setTimeout(startScanningWithTimeout, 100);
+            }
+        };
+
+        // Начинаем проверку готовности видео
+        startScanningWithTimeout();
     };
 
     // Остановка сканирования
@@ -723,6 +780,23 @@ const HomeScreen: React.FC = () => {
 
                         {/* Control buttons */}
                         <div className="space-y-4 mb-6">
+                            {/* Тестовая кнопка для проверки камеры */}
+                            <button
+                                onClick={async () => {
+                                    console.log('Тестируем камеру...');
+                                    const result = await startCamera();
+                                    console.log('Результат теста камеры:', result);
+                                    if (result) {
+                                        setError('');
+                                        alert('Камера работает!');
+                                    }
+                                }}
+                                className="w-full py-2 bg-gray-500 text-white rounded-xl font-medium text-sm hover:bg-gray-600 transition-all shadow-md"
+                                type="button"
+                            >
+                                🧪 Тест камеры
+                            </button>
+
                             {!isScanning ? (
                                 <button
                                     onClick={startScanning}
